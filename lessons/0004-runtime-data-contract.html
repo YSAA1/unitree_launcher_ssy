@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0004 - Runtime 数据契约</title>
+  <link rel="stylesheet" href="../assets/teaching.css">
+</head>
+<body>
+<main>
+  <h1>0004 - Runtime 数据契约</h1>
+  <p class="lede">目标：看懂一帧控制循环里，状态、策略、命令和机器人后端之间到底传了什么。</p>
+
+  <h2>先看四个接口，不看具体策略</h2>
+  <p>这节只读四个代码坐标：</p>
+  <ul>
+    <li><code>robot/base.py:63</code> 的 <code>RobotState</code></li>
+    <li><code>robot/base.py:97</code> 的 <code>RobotCommand</code></li>
+    <li><code>policy/base.py:61</code> 的 <code>Policy.step</code></li>
+    <li><code>robot/base.py:122</code> 的 <code>RobotInterface</code></li>
+  </ul>
+
+  <h2>RobotState：机器人现在是什么样</h2>
+  <p><code>RobotState</code> 是当前状态快照。它不负责控制，只负责描述当前机器人。</p>
+  <pre><code>timestamp
+joint_positions        # (N_DOF,)
+joint_velocities       # (N_DOF,)
+joint_torques          # (N_DOF,)
+imu_quaternion         # (4,) wxyz
+imu_angular_velocity   # (3,)
+imu_linear_acceleration# (3,)
+base_position          # (3,)
+base_velocity          # (3,)
+sdk_state              # real/mirror only</code></pre>
+
+  <p>测试里对形状有明确断言：<code>tests/test_sim_robot.py</code> 检查 29DOF 时关节数组是 <code>(29,)</code>，IMU 四元数是 <code>(4,)</code>，base 状态是 <code>(3,)</code>。</p>
+
+  <h2>RobotCommand：下一步要机器人做什么</h2>
+  <p><code>RobotCommand</code> 是输出命令。它包含目标关节位置、目标速度、前馈力矩和 PD gain。</p>
+  <pre><code>joint_positions   # target q
+joint_velocities  # target dq
+joint_torques     # feedforward tau
+kp                # position gains
+kd                # velocity gains</code></pre>
+
+  <p>这也是 safety clamp 的对象：Safety 不改 policy 内部逻辑，而是检查和裁剪 policy 输出的 <code>RobotCommand</code>。</p>
+
+  <h2>Policy.step：唯一正式策略接口</h2>
+  <p><code>Policy</code> 基类明确写了 Runtime 只调用这些东西：</p>
+  <pre><code>step(state, velocity_command) -> RobotCommand
+reset()
+load(path)
+stiffness / damping / default_pos</code></pre>
+
+  <p>所以具体 policy 内部可以很复杂，比如构造 observation、跑 ONNX、平滑 action、映射 joint order。但对 Runtime 来说，它只关心一件事：</p>
+  <pre><code>cmd = self.policy.step(state, vel_cmd)</code></pre>
+
+  <h2>RobotInterface：sim 和 real 的共同外壳</h2>
+  <p><code>RobotInterface</code> 定义了 Runtime 能对机器人做什么：</p>
+  <pre><code>robot.connect()
+state = robot.get_state()
+robot.send_command(cmd)
+robot.step()
+robot.reset()</code></pre>
+
+  <p><code>SimRobot.step()</code> 推进 MuJoCo 物理；<code>RealRobot.step()</code> 基本是 no-op，因为硬件自己的 PD loop 在跑。这就是为什么 Runtime 可以用同一套代码跑 sim 和 real。</p>
+
+  <h2>Runtime.step 里的真实一帧</h2>
+  <p>进入 RUNNING 后，核心路径在 <code>runtime.py:893</code> 附近：</p>
+  <pre><code>state = self.robot.get_state()
+vel_cmd = self._input_manager.get_velocity()
+cmd = self.policy.step(state, vel_cmd)
+cmd = self.safety.clamp_command(cmd, state)
+self.robot.send_command(cmd)
+self.robot.step()</code></pre>
+
+  <p>你以后调 bug，先问：问题发生在 state 输入、policy 输出、safety 裁剪，还是 robot 后端执行？</p>
+
+  <h2>检索练习</h2>
+  <ol>
+    <li><code>RobotState</code> 是输入还是输出？</li>
+    <li><code>Policy.step</code> 返回什么类型？</li>
+    <li><code>RobotCommand</code> 里 <code>kp/kd</code> 是干什么的？</li>
+    <li>为什么 Runtime 不需要知道当前是 MuJoCo 还是真机？</li>
+  </ol>
+
+  <p>速查表：<a href="../reference/0004-runtime-data-contract.html">Runtime 数据契约速查</a></p>
+</main>
+</body>
+</html>

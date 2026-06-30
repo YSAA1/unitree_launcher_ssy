@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0002 - 怎么使用，以及怎么读 main.py</title>
+  <link rel="stylesheet" href="../assets/teaching.css">
+</head>
+<body>
+<main>
+  <h1>0002 - 怎么使用，以及怎么读 main.py</h1>
+  <p class="lede">目标：你不需要一次读完 <code>main.py</code>。你只需要知道当前命令会落到哪个代码块。</p>
+
+  <h2>先学使用，不先读源码</h2>
+  <p>这个项目的日常操作可以分成三类：仿真调试、无界面验证、日志/真机相关观察。</p>
+
+  <table>
+    <thead>
+      <tr><th>你要做什么</th><th>先用什么</th><th>为什么</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>看 policy 是否能在 MuJoCo 站稳/动起来</td>
+        <td><code>uv run sim --gui --policy ...</code></td>
+        <td>最直观，但需要点击窗口并按 <code>Space</code> 启动。</td>
+      </tr>
+      <tr>
+        <td>想用页面按钮和速度滑条</td>
+        <td><code>uv run sim --viser --policy ...</code></td>
+        <td>比 GUI 键盘更明确，适合学习和远程机器。</td>
+      </tr>
+      <tr>
+        <td>只想知道能不能跑通</td>
+        <td><code>uv run sim --policy ... --steps 500 --no-log</code></td>
+        <td>headless 会自动启动，反馈更直接。</td>
+      </tr>
+      <tr>
+        <td>做更高频 physics 评估</td>
+        <td><code>uv run eval --steps 500 --policy ...</code></td>
+        <td><code>eval</code> 会把 sim physics 频率强制到 1000 Hz。</td>
+      </tr>
+      <tr>
+        <td>分析以前的数据</td>
+        <td><code>uv run replay logs/name/ --gui</code></td>
+        <td>这是看历史，不会控制机器人。</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>完整命令表见 <a href="../reference/0002-command-cheatsheet.html">命令速查表</a>。</p>
+
+  <h2>为什么你看到机器人站着不动</h2>
+  <p>GUI 路径调用的是 <code>run_with_viewer()</code>：它启动控制线程，但不自动 <code>safety.start()</code>。所以窗口打开后默认是 IDLE/默认站姿。你要点击 MuJoCo 窗口，然后按 <code>Space</code>。</p>
+
+  <p><code>stance_29dof.onnx</code> 是速度跟踪/站姿类 policy。启动后如果速度命令还是零，它仍然应该站着。按 <code>Up</code>、<code>Down</code>、<code>Left</code>、<code>Right</code>、<code>,</code>、<code>.</code> 才会给速度命令。</p>
+
+  <p><code>beyondmimic_29dof.onnx</code> 是 motion tracking 类 policy。启动后通常不靠方向键，而是按轨迹时间推进。如果按 <code>Space</code> 后终端没有打印 active policy started，优先怀疑窗口没有键盘焦点。</p>
+
+  <h2>main.py 不要线性读</h2>
+  <p>把 <code>main.py</code> 当成路线图：</p>
+
+  <table>
+    <thead>
+      <tr><th>代码块</th><th>你什么时候读</th><th>作用</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>run_with_viewer</code></td>
+        <td>你用 <code>--gui</code> 时</td>
+        <td>MuJoCo viewer 主线程 + Runtime 控制线程。</td>
+      </tr>
+      <tr>
+        <td><code>run_headless</code></td>
+        <td>没有 <code>--gui/--viser</code> 时</td>
+        <td>循环调用 <code>runtime.step()</code>，并默认启动 policy。</td>
+      </tr>
+      <tr>
+        <td><code>run_with_viser</code></td>
+        <td>你用 <code>--viser</code> 时</td>
+        <td>浏览器 UI、速度滑条、状态面板。</td>
+      </tr>
+      <tr>
+        <td><code>build_parser</code></td>
+        <td>你想知道命令行参数时</td>
+        <td>定义 mode、默认 config、参数名。</td>
+      </tr>
+      <tr>
+        <td><code>main</code> 前半</td>
+        <td>你想知道 mode 怎么分流时</td>
+        <td>mirror/replay 特殊返回，普通路径加载 config 和 robot。</td>
+      </tr>
+      <tr>
+        <td><code>main</code> gantry/zero 分支</td>
+        <td>只在你用 <code>--gantry</code> 或 <code>--zero</code> 时</td>
+        <td>特殊实验路径，初学先跳过。</td>
+      </tr>
+      <tr>
+        <td><code>main</code> 正常路径</td>
+        <td>你跑普通 policy 时</td>
+        <td>加载 policy、safety、logger、estimator、input、Runtime。</td>
+      </tr>
+      <tr>
+        <td><code>cli_sim/cli_eval/...</code></td>
+        <td>你想知道 <code>uv run sim</code> 怎么进来时</td>
+        <td>pyproject script entrypoint 包装。</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>三个先验判断</h2>
+  <ol>
+    <li>如果 GUI 站着不动，先按 <code>Space</code>，再给速度命令。</li>
+    <li>如果你只想证明 policy 能跑，先用 headless <code>--steps</code>，别先开 GUI。</li>
+    <li>如果涉及 <code>real</code>，先停止：它是安全问题，不是学习阶段的普通模式。</li>
+  </ol>
+
+  <h2>检索练习</h2>
+  <p>用自己的话回答，不要复制表格。</p>
+  <div class="quiz" data-answer="space">
+    <p><strong>1.</strong> GUI 打开后，要启动 active policy，先按哪个键？</p>
+    <button>enter</button><button>space</button><button>delete</button>
+    <div class="feedback"></div>
+  </div>
+  <div class="quiz" data-answer="headless">
+    <p><strong>2.</strong> 想快速证明 policy 能跑通，优先用 GUI 还是 headless？</p>
+    <button>headless</button><button>gui</button><button>replay</button>
+    <div class="feedback"></div>
+  </div>
+  <div class="quiz" data-answer="gantry">
+    <p><strong>3.</strong> 初学普通 policy 路径时，<code>main.py</code> 里哪个特殊分支可以先跳过？</p>
+    <button>config</button><button>gantry</button><button>runtime</button>
+    <div class="feedback"></div>
+  </div>
+</main>
+
+<script>
+  document.querySelectorAll(".quiz").forEach((quiz) => {
+    const answer = quiz.dataset.answer;
+    const feedback = quiz.querySelector(".feedback");
+    quiz.querySelectorAll("button").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (button.textContent.trim() === answer) {
+          feedback.textContent = "正确。";
+          feedback.style.color = "#0f766e";
+        } else {
+          feedback.textContent = "再看一次本节的路线图。";
+          feedback.style.color = "#9a3412";
+        }
+      });
+    });
+  });
+</script>
+</body>
+</html>

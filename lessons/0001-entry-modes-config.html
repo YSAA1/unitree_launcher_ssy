@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0001 - Entry, Modes, Config</title>
+  <link rel="stylesheet" href="../assets/teaching.css">
+</head>
+<body>
+<main>
+  <h1>0001 - 从入口读懂模式和配置</h1>
+  <p class="lede">目标：看到一条 <code>uv run ...</code> 命令后，能预测它会加载哪个配置、选择哪个 robot backend、怎么进入 Runtime。</p>
+
+  <h2>这节课的单点胜利</h2>
+  <p>把项目入口理解成一个装配器，而不是一个算法文件。</p>
+  <pre><code>CLI mode
+  -> argparse defaults
+  -> YAML config
+  -> CLI overrides
+  -> robot backend
+  -> policy/default policy
+  -> safety + input + logger
+  -> Runtime
+  -> runner: GUI / Viser / headless</code></pre>
+
+  <h2>模式是第一分叉</h2>
+  <p><a href="../README.md">README</a> 先给出五个模式：<code>sim</code>、<code>eval</code>、<code>real</code>、<code>mirror</code>、<code>replay</code>。源码里的 <a href="../src/unitree_launcher/main.py">main.py</a> 也把这五个模式作为 CLI subparser。</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Mode</th>
+        <th>默认配置</th>
+        <th>关键后端/路径</th>
+        <th>你应该先问的问题</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>sim</code></td>
+        <td><code>configs/sim.yaml</code></td>
+        <td><code>SimRobot</code></td>
+        <td>这是 GUI、Viser 还是 headless？有没有 policy？</td>
+      </tr>
+      <tr>
+        <td><code>eval</code></td>
+        <td><code>configs/sim.yaml</code>，然后强制 1000 Hz physics</td>
+        <td><code>SimRobot</code></td>
+        <td>这是评估，不是交互调试；步数/时长是什么？</td>
+      </tr>
+      <tr>
+        <td><code>real</code></td>
+        <td><code>configs/real.yaml</code></td>
+        <td><code>RealRobot</code></td>
+        <td>安全、网络接口、手柄急停、prepare gate 是否清楚？</td>
+      </tr>
+      <tr>
+        <td><code>mirror</code></td>
+        <td><code>configs/sim.yaml</code></td>
+        <td>只读 mirror runner</td>
+        <td>这是观察真机状态，不应发控制命令。</td>
+      </tr>
+      <tr>
+        <td><code>replay</code></td>
+        <td>日志路径驱动</td>
+        <td>replay runner</td>
+        <td>这是分析历史数据，不是控制机器人。</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>速查版见 <a href="../reference/0001-mode-map.html">模式速查表</a>。</p>
+
+  <h2>配置不是散落的字典</h2>
+  <p><a href="../src/unitree_launcher/config.py">config.py</a> 把 YAML 加载成 dataclass：<code>RobotConfig</code>、<code>PolicyConfig</code>、<code>ControlConfig</code>、<code>SafetyConfig</code>、<code>NetworkConfig</code>、<code>ViewerConfig</code>、<code>LoggingConfig</code>。加载后会验证 robot variant、频率整除、日志格式等。</p>
+
+  <div class="grid">
+    <div class="card">
+      <h3><code>configs/sim.yaml</code></h3>
+      <p>默认 <code>g1_29dof</code>，50 Hz policy，500 Hz MuJoCo physics，DDS domain 1。</p>
+    </div>
+    <div class="card">
+      <h3><code>configs/real.yaml</code></h3>
+      <p>真机网络默认 <code>eth0</code>，DDS domain 0，开启 tilt/frame-drop 检查。</p>
+    </div>
+    <div class="card">
+      <h3><code>configs/unsafe.yaml</code></h3>
+      <p>关闭 tilt check 和 joint position limits。它应该触发安全警觉。</p>
+    </div>
+  </div>
+
+  <h2>main.py 的正常装配路径</h2>
+  <ol>
+    <li><code>build_parser()</code> 定义五个 mode 和各自默认配置。</li>
+    <li><code>main()</code> 先特殊处理 <code>mirror</code> 和 <code>replay</code>，因为它们不是正常 policy 控制路径。</li>
+    <li>普通控制路径检查 policy / gantry / zero-torque，再加载 config。</li>
+    <li><code>sim/eval</code> 创建 <code>SimRobot</code>；<code>real</code> 创建 <code>RealRobot</code>。</li>
+    <li>加载 default policy 和 active policy。</li>
+    <li>创建 <code>SafetyController</code>、logger、estimator、input manager。</li>
+    <li>创建 <code>Runtime(...)</code>。</li>
+    <li>根据 <code>--gui</code>、<code>--viser</code> 或 headless 选择 runner。</li>
+  </ol>
+
+  <div class="warning callout">
+    <strong>风险规则：</strong><code>real</code> 模式不是“把 sim 换个 backend”。它还引入真机网络、无线手柄、prepare phase、硬件后端和真实安全风险。
+  </div>
+
+  <h2>用测试锁住理解</h2>
+  <p><a href="../tests/test_main.py">tests/test_main.py</a> 是这节课的练习册。它验证 sim 默认配置、real 默认 interface、CLI override、policy 格式检测、headless runner 等入口行为。</p>
+  <pre><code>uv run pytest tests/test_main.py tests/test_config.py -x</code></pre>
+
+  <h2>检索练习</h2>
+  <p>先不要翻答案，试着从记忆里回答。</p>
+
+  <div class="quiz" data-answer="sim">
+    <p><strong>1.</strong> 哪个 mode 用 <code>SimRobot</code>，默认 500 Hz physics，并可 GUI/Viser/headless？</p>
+    <button>sim</button><button>real</button><button>mirror</button>
+    <div class="feedback"></div>
+  </div>
+
+  <div class="quiz" data-answer="real">
+    <p><strong>2.</strong> 哪个 mode 默认加载 <code>configs/real.yaml</code>，并且应该先触发安全审查？</p>
+    <button>eval</button><button>real</button><button>replay</button>
+    <div class="feedback"></div>
+  </div>
+
+  <div class="quiz" data-answer="config">
+    <p><strong>3.</strong> YAML 被加载、验证并变成 dataclass 后，主要通过哪个对象流入 Runtime？</p>
+    <button>logger</button><button>config</button><button>policy</button>
+    <div class="feedback"></div>
+  </div>
+
+  <h2>下一步</h2>
+  <p>回到聊天里，用自己的话回答这三个问题：<strong>sim 和 eval 最大区别是什么？real 模式为什么不能直接当作 sim 的替代？main.py 创建 Runtime 前必须准备哪几类对象？</strong></p>
+  <p>如果哪里卡住，直接问 agent。下一课会进入 <code>RobotState</code> / <code>RobotCommand</code> / <code>Policy.step</code> 的数据契约。</p>
+</main>
+
+<script>
+  document.querySelectorAll(".quiz").forEach((quiz) => {
+    const answer = quiz.dataset.answer;
+    const feedback = quiz.querySelector(".feedback");
+    quiz.querySelectorAll("button").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (button.textContent.trim() === answer) {
+          feedback.textContent = "正确。";
+          feedback.style.color = "#0f766e";
+        } else {
+          feedback.textContent = "再想一下，先回到模式分叉表。";
+          feedback.style.color = "#9a3412";
+        }
+      });
+    });
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0003 - argparse 和 preset 数据流</title>
+  <link rel="stylesheet" href="../assets/teaching.css">
+</head>
+<body>
+<main>
+  <h1>0003 - argparse 和 preset 数据流</h1>
+  <p class="lede">目标：看懂 <code>parser</code>、<code>subparser</code>、<code>args</code>、<code>args.preset</code> 和 <code>config</code> 的区别。</p>
+
+  <h2>一句话模型</h2>
+  <p><code>argparse</code> 不运行机器人。它只把命令行字符串解析成一个对象：<code>args</code>。真正影响运行的是后面业务代码怎么使用 <code>args</code>。</p>
+
+  <pre><code>uv run sim --gui --policy assets/policies/stance_29dof.onnx
+          │
+          ▼
+["sim", "--gui", "--policy", "assets/policies/stance_29dof.onnx"]
+          │
+          ▼
+args.mode = "sim"
+args.gui = True
+args.policy = "assets/policies/stance_29dof.onnx"
+args.config = "configs/sim.yaml"
+args.preset = None</code></pre>
+
+  <h2>parser 和 subparser</h2>
+  <p><code>parser</code> 是顶层解析器。它先负责知道“这个程序有几个子命令”。</p>
+  <p><code>subparser</code> 是每个子命令自己的解析器。<code>sim</code> 有 <code>--gui</code>、<code>--viser</code>；<code>real</code> 有 <code>--interface</code>、<code>--zero</code>；<code>replay</code> 有日志路径。</p>
+
+  <pre><code>parser = argparse.ArgumentParser(...)
+subparsers = parser.add_subparsers(dest="mode", required=True)
+
+sim_parser = subparsers.add_parser("sim")
+real_parser = subparsers.add_parser("real")
+replay_parser = subparsers.add_parser("replay")</code></pre>
+
+  <h2>为什么需要 subparser</h2>
+  <p>因为 <code>sim</code>、<code>real</code>、<code>replay</code> 不是同一种命令。</p>
+  <table>
+    <thead>
+      <tr><th>命令</th><th>需要的参数</th><th>不应该出现的参数</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>sim</code></td><td><code>--gui</code>、<code>--viser</code>、<code>--policy</code></td><td>真机 <code>--zero</code></td></tr>
+      <tr><td><code>real</code></td><td><code>--interface</code>、<code>--auto</code>、<code>--zero</code></td><td>仿真 GUI 逻辑</td></tr>
+      <tr><td><code>replay</code></td><td><code>log_dir</code>、<code>--speed</code>、<code>--loop</code></td><td><code>--policy</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>本项目 args.preset 的完整流动</h2>
+  <p>定义位置：<code>main.py:_add_base_args</code></p>
+  <pre><code>parser.add_argument("--preset", default=None,
+                    help="Named config preset (e.g., unsafe)")</code></pre>
+
+  <p>如果你不传：</p>
+  <pre><code>uv run sim --policy p.onnx
+
+args.preset = None
+args.config = "configs/sim.yaml"
+
+main.py:
+  config = load_config(args.config)</code></pre>
+
+  <p>如果你传：</p>
+  <pre><code>uv run sim --preset unsafe --policy p.onnx
+
+args.preset = "unsafe"
+args.config = "configs/sim.yaml"
+
+main.py:
+  preset_path = configs/unsafe.yaml
+  config = load_config(preset_path)</code></pre>
+
+  <p><code>configs/unsafe.yaml</code> 只覆盖少量 safety 字段：</p>
+  <pre><code>safety:
+  tilt_check: false
+  joint_position_limits: false</code></pre>
+
+  <div class="callout warning">
+    <strong>注意：</strong><code>preset</code> 是“先加载哪个配置文件”的选择。它不是 policy，不是 mode，也不是 Runtime 状态。
+  </div>
+
+  <h2>args 和 config 的分工</h2>
+  <table>
+    <thead>
+      <tr><th>对象</th><th>来源</th><th>作用</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>args</code></td><td>命令行</td><td>记录用户这次运行传了什么。</td></tr>
+      <tr><td><code>config</code></td><td>YAML + CLI overrides</td><td>运行时模块真正使用的配置。</td></tr>
+      <tr><td><code>robot/policy/runtime</code></td><td>代码构造</td><td>拿 <code>config</code> 和 <code>args</code> 的具体字段创建对象。</td></tr>
+    </tbody>
+  </table>
+
+  <h2>检索练习</h2>
+  <p>不看表格，回答：</p>
+  <ol>
+    <li><code>parser</code> 和 <code>subparser</code> 的区别是什么？</li>
+    <li><code>args.preset</code> 是怎么从命令行流到 <code>load_config()</code> 的？</li>
+    <li><code>args</code> 和 <code>config</code> 哪个是 Runtime 主要依赖的配置对象？</li>
+  </ol>
+</main>
+</body>
+</html>

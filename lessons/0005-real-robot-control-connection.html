@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0005 - 真机怎么连接和控制</title>
+  <link rel="stylesheet" href="../assets/teaching.css">
+</head>
+<body>
+<main>
+  <h1>0005 - 真机怎么连接和控制</h1>
+  <p class="lede">目标：理解 <code>uv run real</code> 到底在哪里运行、怎么连接 G1、Python 和 C++ 各自负责什么。</p>
+
+  <h2>第一件事：代码跑在 G1 onboard PC 上</h2>
+  <p>README 里的真机部署流程是先把代码同步到机器人，再 SSH 到机器人上运行。</p>
+  <pre><code>./scripts/deploy_to_robot.sh
+ssh unitree@192.168.123.164
+cd ~/unitree_launcher
+uv run real --policy assets/policies/stance_29dof.onnx</code></pre>
+
+  <p>所以真机控制的核心不是“开发机远程发电机命令”，而是：</p>
+  <pre><code>开发机同步代码
+  -> 登录 G1 onboard PC
+  -> onboard PC 运行 Python
+  -> Python 调 C++ binding
+  -> C++ 通过 DDS 和电机控制板通信</code></pre>
+
+  <h2>real 模式从 main.py 进入 RealRobot</h2>
+  <p><code>real</code> 子命令定义默认配置是 <code>configs/real.yaml</code>，默认网卡是 <code>eth0</code>。</p>
+  <pre><code>real_parser = subparsers.add_parser("real")
+_add_base_args(real_parser, "configs/real.yaml")
+real_parser.add_argument("--interface", default="eth0")</code></pre>
+
+  <p>进入 robot 创建分支后，<code>sim/eval</code> 用 <code>SimRobot</code>，否则走 <code>RealRobot</code>。</p>
+  <pre><code>if args.mode in ("sim", "eval"):
+    robot = SimRobot(config)
+else:
+    robot = RealRobot(config)</code></pre>
+
+  <h2>RealRobot.connect：真正打开连接</h2>
+  <p><code>RealRobot.connect()</code> 会 import <code>unitree_cpp.UnitreeController</code>。如果没有安装，就提示去跑 <code>scripts/build_cpp_backend.sh</code>。</p>
+  <pre><code>from unitree_cpp import UnitreeController
+
+config_dict = {
+    "net_if": self._iface_name,
+    "control_dt": 0.02,
+    "msg_type": "hg",
+    "control_mode": "position",
+    "lowcmd_topic": "rt/lowcmd",
+    "lowstate_topic": "rt/lowstate",
+    "num_dofs": self._n_dof,
+}
+self._controller = UnitreeController(config_dict)</code></pre>
+
+  <p>这里的重点：</p>
+  <ul>
+    <li><code>net_if</code> 是网卡，比如 G1 onboard 的 <code>eth0</code>。</li>
+    <li><code>lowstate_topic</code> 是读机器人状态的 DDS topic。</li>
+    <li><code>lowcmd_topic</code> 是发底层命令的 DDS topic。</li>
+    <li><code>control_dt=0.02</code> 表示 C++ 层 20ms 周期重发命令，也就是 50 Hz。</li>
+  </ul>
+
+  <h2>状态怎么进 Python</h2>
+  <p><code>RealRobot.get_state()</code> 调 C++ controller：</p>
+  <pre><code>state = self._controller.get_robot_state()
+ms = state.motor_state
+
+return RobotState(
+    joint_positions=np.array(ms.q[:self._n_dof]),
+    joint_velocities=np.array(ms.dq[:self._n_dof]),
+    joint_torques=np.array(ms.tau_est[:self._n_dof]),
+    imu_quaternion=np.array(state.imu_state.quaternion[:4]),
+    ...
+)</code></pre>
+
+  <p>真机没有 MuJoCo 的世界坐标，所以 <code>base_position</code> 和 <code>base_velocity</code> 先填 <code>NaN</code>。如果 policy 需要 base 状态，就要靠 estimator 填。</p>
+
+  <h2>命令怎么发到真机</h2>
+  <p><code>Runtime.step()</code> 还是同一条线：</p>
+  <pre><code>state = robot.get_state()
+vel_cmd = input_manager.get_velocity()
+cmd = policy.step(state, vel_cmd)
+cmd = safety.clamp_command(cmd, state)
+robot.send_command(cmd)
+robot.step()</code></pre>
+
+  <p>但真机里的 <code>robot.send_command(cmd)</code> 是：</p>
+  <pre><code>self._controller.set_gains(cmd.kp.tolist(), cmd.kd.tolist())
+self._controller.step(cmd.joint_positions.tolist())</code></pre>
+
+  <p>也就是说 Python 把 <code>RobotCommand</code> 转成 C++ binding 调用；C++ 层负责 DDS、CRC、motor mode 和底层重发。</p>
+
+  <h2>无线手柄怎么进控制循环</h2>
+  <p><code>main.py</code> 在 real 模式会把 <code>WirelessInput</code> 放进输入控制器列表，并注册给 robot。</p>
+  <pre><code>if args.mode == "real":
+    wireless = WirelessInput()
+    input_controllers.append(wireless)
+
+robot.connect()
+robot.set_wireless_handler(wireless.parse)</code></pre>
+
+  <p><code>RealRobot.get_state()</code> 每次读状态时，会拿到 <code>state.wireless_remote</code>，然后调用 <code>wireless.parse(remote)</code>。这样 Start、Stop、A 键 E-stop、摇杆速度命令就进入 Runtime。</p>
+
+  <h2>prepare/start 为什么存在</h2>
+  <p>真机模式会设置一个 5 秒 <code>PREPARE</code> 序列：</p>
+  <pre><code>if args.mode == "real":
+    runtime._mode_sequence = [(PREPARE, 5.0)]
+    if not args.auto:
+        runtime.require_manual_start = True</code></pre>
+
+  <p>含义：先从当前电机位置平滑过渡到 default stance，然后等待无线手柄 Start。不是一运行就直接 policy 接管。</p>
+
+  <div class="callout warning">
+    <strong>安全底线：</strong>软件 A 键 E-stop 依赖 Python 循环还活着；如果 Python 卡死，C++ 仍可能重发最后命令。硬件 fallback 是无线手柄 <code>L2+B</code>，这个不能省。
+  </div>
+
+  <h2>检索练习</h2>
+  <ol>
+    <li>真机控制代码主要跑在开发机还是 G1 onboard PC？</li>
+    <li><code>RealRobot.connect()</code> 里创建的核心对象是什么？</li>
+    <li><code>rt/lowstate</code> 和 <code>rt/lowcmd</code> 分别是什么方向的数据？</li>
+    <li>为什么真机启动后需要 prepare 和 Start？</li>
+  </ol>
+
+  <p>速查表：<a href="../reference/0005-real-robot-control-chain.html">真机控制链路速查</a></p>
+</main>
+</body>
+</html>
