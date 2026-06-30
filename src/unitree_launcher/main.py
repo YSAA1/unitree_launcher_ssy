@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Optional
 
 from unitree_launcher.config import (
+    Q_HOME_T4_29DOF,
     _get_joints_for_variant,
     apply_cli_overrides,
     load_config,
@@ -417,6 +418,10 @@ def build_parser() -> argparse.ArgumentParser:
                              help="Serve state over TCP for remote WiFi mirror")
     real_parser.add_argument("--zero", action="store_true",
                              help="Zero-torque mode: no control, just publish state for mirror")
+    real_parser.add_argument("--t4-static-smoke", action="store_true",
+                             help="T4 dry-run: build a static hold command without publishing")
+    real_parser.add_argument("--t4-policy-smoke", action="store_true",
+                             help="T4 dry-run: load policy and build one command without publishing")
     real_parser.set_defaults(steps=None, play=False, gui=False, viser=False,
                              record=None, gamepad=False, gamepad_debug=False)
 
@@ -492,14 +497,28 @@ def main(argv: Optional[list] = None) -> None:
     # ---- Validate ----
     is_gantry = getattr(args, 'gantry', False)
     is_zero_torque = getattr(args, 'zero', False)
+    is_t4_static_smoke = getattr(args, 't4_static_smoke', False)
+    is_t4_policy_smoke = getattr(args, 't4_policy_smoke', False)
     # When --policy-dir is given without --policy, pick the first ONNX file.
-    if not is_zero_torque and not args.policy and args.policy_dir:
+    if (
+        not is_zero_torque
+        and not is_t4_static_smoke
+        and not is_t4_policy_smoke
+        and not args.policy
+        and args.policy_dir
+    ):
         import glob as _glob
         _candidates = sorted(_glob.glob(str(Path(args.policy_dir) / "*.onnx")))
         if _candidates:
             args.policy = _candidates[0]
-    if not is_gantry and not args.policy and not is_zero_torque:
-        parser.error("--policy is required (or use --gantry or --zero)")
+    if (
+        not is_gantry
+        and not args.policy
+        and not is_zero_torque
+        and not is_t4_static_smoke
+        and not is_t4_policy_smoke
+    ):
+        parser.error("--policy is required (or use --gantry, --zero, or --t4-static-smoke)")
 
     # ---- Config ----
     if args.preset:
@@ -537,6 +556,85 @@ def main(argv: Optional[list] = None) -> None:
         robot = RealRobot(config)
 
     robot_joints = _get_joints_for_variant(variant)
+
+    # ---- T4 static smoke: explicit dry-run before any active policy ----
+    if is_t4_static_smoke:
+        if args.mode != "real" or variant != "t4_29dof":
+            parser.error("--t4-static-smoke requires real mode with robot.variant=t4_29dof")
+        if args.duration is None or args.duration <= 0:
+            parser.error("--t4-static-smoke requires a positive --duration")
+        if not hasattr(robot, "build_command_message"):
+            parser.error("Selected robot backend does not support T4 static smoke")
+
+        import numpy as np
+
+        q_home = config.control.q_home or Q_HOME_T4_29DOF
+        target_q = np.array([q_home[j] for j in robot_joints], dtype=np.float64)
+
+        def _gain_array(value, default):
+            if value is None:
+                return np.full(len(robot_joints), default, dtype=np.float64)
+            if isinstance(value, (int, float)):
+                return np.full(len(robot_joints), float(value), dtype=np.float64)
+            arr = np.array(value, dtype=np.float64)
+            if arr.shape != (len(robot_joints),):
+                raise ValueError(
+                    f"T4 static smoke gain length {arr.size}, expected {len(robot_joints)}"
+                )
+            return arr
+
+        from unitree_launcher.robot.base import RobotCommand
+
+        static_cmd = RobotCommand(
+            joint_positions=target_q,
+            joint_velocities=np.zeros(len(robot_joints), dtype=np.float64),
+            joint_torques=np.zeros(len(robot_joints), dtype=np.float64),
+            kp=_gain_array(config.control.kp, 0.0),
+            kd=_gain_array(config.control.kd, config.control.kd_damp),
+        )
+
+        robot.connect()
+        try:
+            robot.build_command_message(static_cmd)
+            print(
+                "[main] T4 static smoke built one 29-DoF hold command "
+                f"for {args.duration:.3f}s; command publishing remains disabled."
+            )
+        finally:
+            robot.disconnect()
+        return
+
+    # ---- T4 policy smoke: one policy tick, command-message dry-run only ----
+    if is_t4_policy_smoke:
+        if args.mode != "real" or variant != "t4_29dof":
+            parser.error("--t4-policy-smoke requires real mode with robot.variant=t4_29dof")
+        if args.duration is None or args.duration <= 0:
+            parser.error("--t4-policy-smoke requires a positive --duration")
+        if not args.policy:
+            parser.error("--t4-policy-smoke requires --policy")
+        if not hasattr(robot, "build_command_message"):
+            parser.error("Selected robot backend does not support T4 policy smoke")
+
+        import numpy as np
+
+        active_policy, active_joint_mapper = load_policy(
+            args.policy, config, robot_joints, robot
+        )
+
+        robot.connect()
+        try:
+            state = robot.get_state()
+            cmd = active_policy.step(state, np.zeros(3, dtype=np.float64))
+            # This verifies policy -> RobotCommand -> Zvalley message mapping.
+            # It intentionally does not publish the message.
+            robot.build_command_message(cmd)
+            print(
+                "[main] T4 policy smoke built one 29-DoF policy command "
+                f"for {args.duration:.3f}s; command publishing remains disabled."
+            )
+        finally:
+            robot.disconnect()
+        return
 
     # ---- Gantry mode: arm sinusoid test (sim + real) ----
     if is_gantry:

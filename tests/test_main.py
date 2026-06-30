@@ -180,6 +180,11 @@ class TestParseRealArgs:
         args = _parse(["real", "--policy", "test.onnx"])
         assert args.interface == "eth0"
 
+    def test_real_t4_static_smoke_flag_parsed(self):
+        args = _parse(["real", "--t4-static-smoke", "--duration", "0.2"])
+        assert args.t4_static_smoke is True
+        assert args.duration == 0.2
+
 
 # ============================================================================
 # Argument Parsing — flags
@@ -380,7 +385,7 @@ class TestMainIntegration:
         _make_t4_beyondmimic_onnx(onnx_path)
         _write_t4_real_config(config_path)
 
-        mock_robot = MagicMock()
+        mock_robot = MagicMock(spec=t4_mod.T4Robot)
         mock_robot.n_dof = 29
         mock_robot.get_state.return_value = RobotState.zeros(29)
 
@@ -400,6 +405,85 @@ class TestMainIntegration:
             assert call_config.network.domain_id == 0
             _, runtime_kwargs = MockRuntime.call_args
             assert runtime_kwargs["joint_mapper"].robot_joints == T4_29DOF_JOINTS
+
+    def test_main_t4_static_smoke_builds_hold_command_without_policy(self, tmp_path):
+        """T4 static smoke is explicit, bounded, and does not load active policy."""
+        import unitree_launcher.robot.t4_robot as t4_mod
+
+        config_path = tmp_path / "t4_real.yaml"
+        _write_t4_real_config(config_path)
+
+        mock_robot = MagicMock()
+        mock_robot.n_dof = 29
+
+        with patch.object(t4_mod, "T4Robot", return_value=mock_robot) as MockT4, \
+             patch("unitree_launcher.main.load_policy") as MockLoadPolicy, \
+             patch("unitree_launcher.main.Runtime") as MockRuntime:
+            main([
+                "real", "--config", str(config_path), "--no-log",
+                "--t4-static-smoke", "--duration", "0.1",
+            ])
+
+            MockT4.assert_called_once()
+            mock_robot.connect.assert_called_once()
+            mock_robot.build_command_message.assert_called_once()
+            mock_robot.send_command.assert_not_called()
+            mock_robot.disconnect.assert_called_once()
+            MockLoadPolicy.assert_not_called()
+            MockRuntime.assert_not_called()
+
+    def test_main_t4_static_smoke_requires_positive_duration(self, tmp_path):
+        """T4 static smoke must be duration-bounded even in dry-run mode."""
+        config_path = tmp_path / "t4_real.yaml"
+        _write_t4_real_config(config_path)
+
+        with pytest.raises(SystemExit):
+            main([
+                "real", "--config", str(config_path), "--no-log",
+                "--t4-static-smoke",
+            ])
+
+    def test_main_t4_policy_smoke_builds_policy_command_without_publishing(self, tmp_path):
+        """T4 policy smoke loads policy and builds one command without Runtime/send."""
+        import unitree_launcher.robot.t4_robot as t4_mod
+        from unitree_launcher.robot.base import RobotState
+
+        onnx_path = str(tmp_path / "test_t4_policy.onnx")
+        config_path = tmp_path / "t4_real.yaml"
+        _make_t4_beyondmimic_onnx(onnx_path)
+        _write_t4_real_config(config_path)
+
+        mock_robot = MagicMock(spec=t4_mod.T4Robot)
+        mock_robot.n_dof = 29
+        mock_robot.get_state.return_value = RobotState.zeros(29)
+
+        with patch.object(t4_mod, "T4Robot", return_value=mock_robot) as MockT4, \
+             patch("unitree_launcher.main.Runtime") as MockRuntime:
+            main([
+                "real", "--policy", onnx_path, "--config", str(config_path),
+                "--no-log", "--t4-policy-smoke", "--duration", "0.1",
+            ])
+
+            MockT4.assert_called_once()
+            mock_robot.connect.assert_called_once()
+            mock_robot.get_state.assert_called_once()
+            mock_robot.build_command_message.assert_called_once()
+            mock_robot.send_command.assert_not_called()
+            mock_robot.disconnect.assert_called_once()
+            MockRuntime.assert_not_called()
+
+    def test_main_t4_policy_smoke_requires_positive_duration(self, tmp_path):
+        """T4 policy smoke must be duration-bounded."""
+        onnx_path = str(tmp_path / "test_t4_policy.onnx")
+        config_path = tmp_path / "t4_real.yaml"
+        _make_t4_beyondmimic_onnx(onnx_path)
+        _write_t4_real_config(config_path)
+
+        with pytest.raises(SystemExit):
+            main([
+                "real", "--policy", onnx_path, "--config", str(config_path),
+                "--no-log", "--t4-policy-smoke",
+            ])
 
     def test_main_logger_lifecycle(self, tmp_path):
         """Logger start/stop called when logging is enabled."""
