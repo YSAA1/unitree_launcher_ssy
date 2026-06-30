@@ -37,3 +37,17 @@ uv run pytest tests/ -x
 - Mock policies return `RobotCommand` from `step()`
 - Integration tests disable `tilt_check` for dummy zero-output policies
 - Headless tests run at max speed (no sleep)
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in GitHub Issues, and external PRs are also a triage surface. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the default five-label triage vocabulary. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Use a single-context domain docs layout: root `CONTEXT.md` plus `docs/adr/`. See `docs/agents/domain.md`.
