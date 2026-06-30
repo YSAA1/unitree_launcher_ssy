@@ -11,6 +11,7 @@ from unitree_launcher.config import (
     Config,
     Q_HOME_23DOF,
     Q_HOME_29DOF,
+    Q_HOME_T4_29DOF,
     STANDBY_KD_29DOF,
     STANDBY_KP_29DOF,
 )
@@ -50,7 +51,11 @@ class HoldPolicy(Policy):
         # Home positions
         q_home_dict = config.control.q_home
         if q_home_dict is None:
-            q_home_dict = Q_HOME_29DOF if variant == "g1_29dof" else Q_HOME_23DOF
+            q_home_dict = {
+                "g1_29dof": Q_HOME_29DOF,
+                "g1_23dof": Q_HOME_23DOF,
+                "t4_29dof": Q_HOME_T4_29DOF,
+            }[variant]
         self._q_home = np.array(
             [q_home_dict[j] for j in policy_joints], dtype=np.float64
         )

@@ -28,8 +28,7 @@ from pathlib import Path
 from typing import Optional
 
 from unitree_launcher.config import (
-    G1_29DOF_JOINTS,
-    G1_23DOF_JOINTS,
+    _get_joints_for_variant,
     apply_cli_overrides,
     load_config,
     merge_configs,
@@ -529,12 +528,15 @@ def main(argv: Optional[list] = None) -> None:
     if args.mode in ("sim", "eval"):
         from unitree_launcher.robot.sim_robot import SimRobot
         robot = SimRobot(config)
+    elif args.mode == "real" and variant == "t4_29dof":
+        from unitree_launcher.robot.t4_robot import T4Robot
+        robot = T4Robot(config)
     else:
         # real mode: onboard via C++ unitree_cpp
         from unitree_launcher.robot.real_robot import RealRobot
         robot = RealRobot(config)
 
-    robot_joints = G1_29DOF_JOINTS if "29" in variant else G1_23DOF_JOINTS
+    robot_joints = _get_joints_for_variant(variant)
 
     # ---- Gantry mode: arm sinusoid test (sim + real) ----
     if is_gantry:

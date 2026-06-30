@@ -22,6 +22,7 @@ from unitree_launcher.config import (
     G1_23DOF_JOINTS,
     G1_29DOF_JOINTS,
     Q_HOME_29DOF,
+    T4_29DOF_JOINTS,
     apply_cli_overrides,
     load_config,
 )
@@ -52,6 +53,65 @@ def _make_isaaclab_onnx(path: str, obs_dim: int = 99, action_dim: int = 29):
     """
     from tests.conftest import create_isaaclab_onnx
     create_isaaclab_onnx(obs_dim, action_dim, path)
+
+
+def _make_t4_beyondmimic_onnx(path: str, obs_dim: int = 154, action_dim: int = 29):
+    """Create a minimal T4 BeyondMimic ONNX model at *path*."""
+    from tests.conftest import create_beyondmimic_onnx
+
+    metadata = {
+        "joint_names": ",".join(T4_29DOF_JOINTS),
+        "joint_stiffness": ",".join(["40.0"] * action_dim),
+        "joint_damping": ",".join(["2.5"] * action_dim),
+        "action_scale": ",".join(["0.5"] * action_dim),
+        "default_joint_pos": ",".join(["0.0"] * action_dim),
+        "anchor_body_name": "Trunk",
+        "body_names": "Trunk,AL1,AL2",
+        "observation_names": "command,motion_anchor_ori_b,base_ang_vel,"
+                             "joint_pos,joint_vel,actions",
+    }
+    create_beyondmimic_onnx(obs_dim, action_dim, action_dim, path, metadata=metadata)
+
+
+def _write_t4_real_config(path: Path) -> None:
+    path.write_text(
+        """
+robot:
+  variant: t4_29dof
+  idl_mode: 0
+
+policy:
+  format: beyondmimic
+  default_policy: null
+  use_onnx_metadata: true
+  use_estimator: false
+
+control:
+  policy_frequency: 50
+  sim_frequency: 1000
+  kd_damp: 8.0
+
+safety:
+  joint_position_limits: false
+  joint_velocity_limits: false
+  torque_limits: false
+  tilt_check: true
+  frame_drop_check: true
+
+network:
+  interface: eth0
+  domain_id: 0
+
+viewer:
+  enabled: false
+  sync: false
+
+logging:
+  enabled: false
+  format: npz
+  compression: none
+""".lstrip()
+    )
 
 
 # ============================================================================
@@ -309,6 +369,37 @@ class TestMainIntegration:
             call_config = MockReal.call_args[0][0]
             assert call_config.network.domain_id == 0
             assert call_config.network.interface == "eth0"
+
+    def test_main_t4_real_mode_routes_to_t4_backend(self, tmp_path):
+        """T4 real mode creates T4Robot and wires T4 joints into Runtime."""
+        import unitree_launcher.robot.t4_robot as t4_mod
+        from unitree_launcher.robot.base import RobotState
+
+        onnx_path = str(tmp_path / "test_t4_policy.onnx")
+        config_path = tmp_path / "t4_real.yaml"
+        _make_t4_beyondmimic_onnx(onnx_path)
+        _write_t4_real_config(config_path)
+
+        mock_robot = MagicMock()
+        mock_robot.n_dof = 29
+        mock_robot.get_state.return_value = RobotState.zeros(29)
+
+        with patch.object(t4_mod, "T4Robot", return_value=mock_robot) as MockT4, \
+             patch("unitree_launcher.main.run_headless"), \
+             patch("unitree_launcher.main.Runtime") as MockRuntime:
+            MockRuntime.return_value = MagicMock()
+
+            main([
+                "real", "--policy", onnx_path, "--interface", "eth0",
+                "--config", str(config_path), "--no-log", "--no-est",
+            ])
+
+            MockT4.assert_called_once()
+            call_config = MockT4.call_args[0][0]
+            assert call_config.robot.variant == "t4_29dof"
+            assert call_config.network.domain_id == 0
+            _, runtime_kwargs = MockRuntime.call_args
+            assert runtime_kwargs["joint_mapper"].robot_joints == T4_29DOF_JOINTS
 
     def test_main_logger_lifecycle(self, tmp_path):
         """Logger start/stop called when logging is enabled."""

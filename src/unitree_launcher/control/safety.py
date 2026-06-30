@@ -17,6 +17,7 @@ from unitree_launcher.config import (
     TORQUE_LIMITS_29DOF,
     VELOCITY_LIMITS_23DOF,
     VELOCITY_LIMITS_29DOF,
+    _get_joints_for_variant,
 )
 from unitree_launcher.robot.base import RobotCommand, RobotState
 
@@ -67,11 +68,24 @@ class SafetyController:
             pos_limits = JOINT_LIMITS_29DOF
             torque_limits = TORQUE_LIMITS_29DOF
             vel_limits = VELOCITY_LIMITS_29DOF
-        else:
+        elif variant == "g1_23dof":
             joints = G1_23DOF_JOINTS
             pos_limits = JOINT_LIMITS_23DOF
             torque_limits = TORQUE_LIMITS_23DOF
             vel_limits = VELOCITY_LIMITS_23DOF
+        else:
+            if (
+                self._safety_config.joint_position_limits
+                or self._safety_config.joint_velocity_limits
+                or self._safety_config.torque_limits
+            ):
+                raise ValueError(
+                    f"Safety limits are not configured for robot variant {variant!r}"
+                )
+            joints = _get_joints_for_variant(variant)
+            pos_limits = {joint: (-np.inf, np.inf) for joint in joints}
+            torque_limits = {joint: np.inf for joint in joints}
+            vel_limits = {joint: np.inf for joint in joints}
 
         self._joints = list(joints)
         self._pos_min = np.array([pos_limits[j][0] for j in joints])
