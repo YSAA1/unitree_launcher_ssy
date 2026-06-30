@@ -20,6 +20,8 @@
   PRD for adding T4 low-level deployment through the existing Runtime and a staged Zvalley SDK bridge.
 - [docs/issues/t4-low-level-deployment-issues.md](docs/issues/t4-low-level-deployment-issues.md)
   Local source for T4 implementation issues; publish to GitHub once `gh` authentication is repaired.
+- [docs/runbooks/t4-deployment-gates.md](docs/runbooks/t4-deployment-gates.md)
+  Operator runbook for staged T4 deployment gates from read-only probe through dry-run policy smoke and future publish prerequisites.
 - [docs/plans/2026-06-30--t4-porting-grill.md](docs/plans/2026-06-30--t4-porting-grill.md)
   Decision record and evidence from the T4 low-level porting grill session.
 - [docs/adr/0001-t4-low-level-policy-control.md](docs/adr/0001-t4-low-level-policy-control.md)
@@ -28,8 +30,18 @@
   ADR choosing `t4_29dof` as the first T4 representation in the existing robot variant model.
 - [scripts/t4_probe_state.py](scripts/t4_probe_state.py)
   Read-only T4 SDK probe. Use on the T4 control environment to inspect `rt/all_joint_state` without publishing commands.
+- [scripts/t4_ros2_probe_state.py](scripts/t4_ros2_probe_state.py)
+  Read-only T4 onboard ROS2 probe. Use after sourcing the T4 ROS2 workspace to inspect `/all_joint_state`, `/nav_all`, and `/robot_state` without publishing commands.
+- [src/unitree_launcher/robot/t4_robot.py](src/unitree_launcher/robot/t4_robot.py)
+  T4 real-mode backend boundary. It subscribes read-only to Zvalley joint/nav state, builds SDK command messages, and remains publish-disabled until static-pose gates are implemented.
 - [tests/test_t4_probe_state.py](tests/test_t4_probe_state.py)
   Fake-SDK tests for the read-only T4 probe behavior.
+- [tests/test_t4_ros2_probe_state.py](tests/test_t4_ros2_probe_state.py)
+  Fake-rclpy tests for the read-only T4 onboard ROS2 probe behavior.
+- [tests/test_t4_robot.py](tests/test_t4_robot.py)
+  Fake-SDK tests for T4 backend state conversion, command-message conversion, and command-disabled behavior.
+- [tests/test_main.py](tests/test_main.py)
+  Includes T4 real-mode routing, `--t4-static-smoke`, and `--t4-policy-smoke` dry-run wiring coverage.
 - [assets/t4/policies/](assets/t4/policies/)
   Local T4 ONNX policy artifacts supplied for the low-level deployment investigation.
 - [assets/t4/motions/](assets/t4/motions/)

@@ -114,11 +114,51 @@ available. It subscribes to `rt/all_joint_state` and `rt/nav_all`, prints the
 real joint count and available state/navigation fields, and intentionally never
 creates an `rt/all_joint_cmd` publisher.
 
+On the current observed T4 robot, the onboard control stack is a ROS2 workspace
+at `/home/zl/work/bipedal_humanoid_pro`, and host-side SDK probing did not
+receive samples while the robot was publishing ROS2 state locally. Use the ROS2
+read-only probe on the robot after sourcing the onboard workspace:
+
+```bash
+scp scripts/t4_ros2_probe_state.py zl@192.168.12.100:/tmp/t4_ros2_probe_state.py
+ssh zl@192.168.12.100
+source /home/zl/work/bipedal_humanoid_pro/install/setup.bash
+python3 /tmp/t4_ros2_probe_state.py --samples 1 --timeout 5
+```
+
+This subscribes to `/all_joint_state`, `/nav_all`, and `/robot_state`, prints
+the joint count and state fields, and never creates an `/all_joint_cmd`
+publisher.
+
+`robot.variant: t4_29dof` is routed to a T4-specific backend in `real` mode.
+That backend currently supports read-only state subscription and `RobotState`
+conversion from `rt/all_joint_state` plus `rt/nav_all`. It can also build a
+29-DoF Zvalley `AllJointCmd_` message from a project `RobotCommand`, but
+command publishing is still disabled. Use the probe first; do not treat T4
+`real` mode as a policy-control path until the static-pose and operator opt-in
+gates are implemented.
+
+The current static-pose smoke gate is a dry run: it builds one bounded 29-DoF
+hold command message and exits without publishing.
+
+```bash
+uv run real --config path/to/t4_real.yaml --t4-static-smoke --duration 0.1 --no-log
+```
+
+The current policy smoke gate is also a dry run: it loads the T4 ONNX, executes
+one policy step, builds one 29-DoF command message, and exits without
+publishing.
+
+```bash
+uv run real --config path/to/t4_real.yaml --policy assets/t4/policies/2026-06-10_12-11-59_t4_kick_modified_4096_7000_gpu0.onnx --t4-policy-smoke --duration 0.1 --no-log
+```
+
 The T4 porting PRD and implementation slices are tracked in:
 
 - `docs/prd/t4-low-level-deployment.md`
 - `docs/issues/t4-low-level-deployment-issues.md`
 - `docs/plans/2026-06-30--t4-porting-grill.md`
+- `docs/runbooks/t4-deployment-gates.md`
 
 Current local T4 assets are organized under:
 

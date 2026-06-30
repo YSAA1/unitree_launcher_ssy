@@ -25,6 +25,8 @@
 - **AllJointState / rt/all_joint_state**：Zvalley SDK 低层状态流，方向是 robot -> software，用来读取 T4 关节状态和控制相关状态。
 - **AllJointCmd / rt/all_joint_cmd**：Zvalley SDK 低层命令流，方向是 software -> robot，用来发送 T4 关节目标、速度、力矩和 PD gain。
 - **T4 SDK bridge**：待新增的 T4 后端适配层，把项目内部 `RobotState` / `RobotCommand` 转换到 Zvalley SDK 的 AllJointState / AllJointCmd 契约。
+- **T4 ROS2 adapter**：T4 下一阶段的实机接入面。部署程序运行在 T4 本机 ROS2 环境中，订阅 `/all_joint_state`、`/nav_all` 和 `/robot_state` 填充 `RobotState`，后续通过显式发布门向 `/all_joint_cmd` 或状态切换话题发送命令。
+- **Publish Gate**：从只读诊断进入真实命令发布前的显式安全门。它必须包含 bounded duration、operator opt-in、机器人物理支撑/安全确认、状态检查、命令维度检查、关节顺序检查和可停止路径。
 - **Runtime**：控制编排器。一次 `Runtime.step()` 会读取输入和状态，选择当前模式，运行 policy 或 prepare/damping 逻辑，执行 safety，再发送命令。
 - **SystemState**：安全状态机的系统状态，包括 idle、running、stopped 和 estop。它决定 Runtime 是否可以进入 active policy。
 - **ControlMode**：Runtime 当前控制模式，包括 hold、default、active、damping、prepare、transition 和 interpolate。它描述当前命令来源。
