@@ -9,6 +9,7 @@ import pytest
 from unitree_launcher.config import (
     G1_29DOF_JOINTS,
     G1_23DOF_JOINTS,
+    T4_29DOF_JOINTS,
     G1_29DOF_MUJOCO_JOINTS,
     G1_23DOF_MUJOCO_JOINTS,
     ISAACLAB_G1_29DOF_JOINTS,
@@ -29,6 +30,7 @@ from unitree_launcher.config import (
     merge_configs,
     resolve_joint_name,
 )
+from unitree_launcher.policy.joint_mapper import JointMapper
 from unitree_launcher.robot.base import RobotCommand, RobotState
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -45,9 +47,46 @@ class TestJointCounts:
     def test_23dof_joint_count(self):
         assert len(G1_23DOF_JOINTS) == 23
 
+    def test_t4_29dof_joint_count(self):
+        assert len(T4_29DOF_JOINTS) == 29
+        assert len(set(T4_29DOF_JOINTS)) == 29
+
     def test_29dof_names_no_joint_suffix(self):
         for name in G1_29DOF_JOINTS:
             assert not name.endswith("_joint"), f"{name} has unexpected _joint suffix"
+
+    def test_t4_joint_order_matches_policy_metadata(self):
+        assert T4_29DOF_JOINTS == [
+            "J_arm_l_01",
+            "J_arm_l_02",
+            "J_arm_l_03",
+            "J_arm_l_04",
+            "J_arm_l_05",
+            "J_arm_l_06",
+            "J_arm_l_07",
+            "J_arm_r_01",
+            "J_arm_r_02",
+            "J_arm_r_03",
+            "J_arm_r_04",
+            "J_arm_r_05",
+            "J_arm_r_06",
+            "J_arm_r_07",
+            "J_waist_pitch",
+            "J_waist_roll",
+            "J_waist_yaw",
+            "J_hip_l_pitch",
+            "J_hip_l_roll",
+            "J_hip_l_yaw",
+            "J_knee_l_pitch",
+            "J_ankle_l_pitch",
+            "J_ankle_l_roll",
+            "J_hip_r_pitch",
+            "J_hip_r_roll",
+            "J_hip_r_yaw",
+            "J_knee_r_pitch",
+            "J_ankle_r_pitch",
+            "J_ankle_r_roll",
+        ]
 
 
 class TestHomePositionKeys:
@@ -189,6 +228,15 @@ class TestJointNameResolution:
         assert resolve_joint_name("TORSO", "g1_23dof") == "torso"
         assert resolve_joint_name("waist_yaw_joint", "g1_23dof") == "torso"
 
+    def test_t4_joint_name_resolution_config_name(self):
+        assert resolve_joint_name("J_arm_l_01", "t4_29dof") == "J_arm_l_01"
+
+    def test_t4_joint_mapper_accepts_policy_order(self):
+        mapper = JointMapper(robot_joints=T4_29DOF_JOINTS, policy_joints=T4_29DOF_JOINTS)
+        assert mapper.n_robot == 29
+        assert mapper.n_policy == 29
+        np.testing.assert_array_equal(mapper.policy_indices, np.arange(29))
+
 
 # ============================================================================
 # Part 4: Config Loading
@@ -235,6 +283,11 @@ class TestConfigValidation:
         path = self._write_yaml({"robot": {"variant": "g1_99dof"}})
         with pytest.raises(ValueError, match="variant"):
             load_config(path)
+
+    def test_t4_variant_accepted(self):
+        path = self._write_yaml({"robot": {"variant": "t4_29dof"}})
+        cfg = load_config(path)
+        assert cfg.robot.variant == "t4_29dof"
 
     def test_invalid_joint_name_rejected(self):
         path = self._write_yaml({

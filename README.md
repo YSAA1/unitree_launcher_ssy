@@ -98,6 +98,35 @@ cd ~/unitree_launcher
 uv run real --policy assets/policies/stance_29dof.onnx
 ```
 
+## Experimental T4 Probe
+
+T4 low-level deployment is being investigated as a separate staged port. The
+first safe gate is read-only: subscribe to Zvalley SDK state and do not publish
+any command topic.
+
+```bash
+python scripts/t4_probe_state.py --domain-id 0 --interface eth0 --sdk-root zv_robot_sdk --samples 1 --timeout 5
+```
+
+The probe is intended to run first on the T4 official or onboard control
+environment where `zv_robot_sdk_python` and the DDS network are already
+available. It subscribes to `rt/all_joint_state` and `rt/nav_all`, prints the
+real joint count and available state/navigation fields, and intentionally never
+creates an `rt/all_joint_cmd` publisher.
+
+The T4 porting PRD and implementation slices are tracked in:
+
+- `docs/prd/t4-low-level-deployment.md`
+- `docs/issues/t4-low-level-deployment-issues.md`
+- `docs/plans/2026-06-30--t4-porting-grill.md`
+
+Current local T4 assets are organized under:
+
+- `assets/t4/policies/`
+- `assets/t4/motions/`
+- `assets/robots/t4/`
+- `zv_robot_sdk/` for the local Zvalley SDK checkout
+
 ### Wireless Controller (Real Robot)
 
 | Button | Action |

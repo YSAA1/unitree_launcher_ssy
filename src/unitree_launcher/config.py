@@ -1,7 +1,7 @@
-"""Robot constants and configuration for the Unitree G1 humanoid.
+"""Robot constants and configuration for supported humanoid robots.
 
 This module defines:
-- Joint name lists for 29-DOF and 23-DOF variants
+- Joint name lists for supported variants
 - MuJoCo joint name mappings
 - IsaacLab joint ordering and index mappings
 - DDS/IDL name mappings
@@ -95,6 +95,41 @@ G1_23DOF_JOINTS: List[str] = [
     "right_shoulder_yaw",
     "right_elbow_pitch",
     "right_elbow_roll",
+]
+
+# ---------------------------------------------------------------------------
+# T4 29-DOF joint names in robot-native order
+# ---------------------------------------------------------------------------
+T4_29DOF_JOINTS: List[str] = [
+    "J_arm_l_01",
+    "J_arm_l_02",
+    "J_arm_l_03",
+    "J_arm_l_04",
+    "J_arm_l_05",
+    "J_arm_l_06",
+    "J_arm_l_07",
+    "J_arm_r_01",
+    "J_arm_r_02",
+    "J_arm_r_03",
+    "J_arm_r_04",
+    "J_arm_r_05",
+    "J_arm_r_06",
+    "J_arm_r_07",
+    "J_waist_pitch",
+    "J_waist_roll",
+    "J_waist_yaw",
+    "J_hip_l_pitch",
+    "J_hip_l_roll",
+    "J_hip_l_yaw",
+    "J_knee_l_pitch",
+    "J_ankle_l_pitch",
+    "J_ankle_l_roll",
+    "J_hip_r_pitch",
+    "J_hip_r_roll",
+    "J_hip_r_yaw",
+    "J_knee_r_pitch",
+    "J_ankle_r_pitch",
+    "J_ankle_r_roll",
 ]
 
 # ---------------------------------------------------------------------------
@@ -290,6 +325,8 @@ Q_HOME_23DOF: Dict[str, float] = {
     "right_elbow_pitch": 0.6,
     "right_elbow_roll": 0.0,
 }
+
+Q_HOME_T4_29DOF: Dict[str, float] = {joint: 0.0 for joint in T4_29DOF_JOINTS}
 
 # ---------------------------------------------------------------------------
 # Joint position limits: config-name -> (min, max) in radians
@@ -762,8 +799,13 @@ def _get_joints_for_variant(variant: str) -> List[str]:
         return G1_29DOF_JOINTS
     elif variant == "g1_23dof":
         return G1_23DOF_JOINTS
+    elif variant == "t4_29dof":
+        return T4_29DOF_JOINTS
     else:
-        raise ValueError(f"Unknown variant: {variant!r}. Must be 'g1_29dof' or 'g1_23dof'.")
+        raise ValueError(
+            f"Unknown variant: {variant!r}. "
+            "Must be 'g1_29dof', 'g1_23dof', or 't4_29dof'."
+        )
 
 
 def resolve_joint_name(name: str, variant: str = "g1_29dof") -> str:
@@ -781,6 +823,12 @@ def resolve_joint_name(name: str, variant: str = "g1_29dof") -> str:
     # Already a config name?
     if name in joints:
         return name
+
+    if variant == "t4_29dof":
+        raise ValueError(
+            f"Unrecognized joint name {name!r} for variant {variant!r}. "
+            f"Valid config names: {joints}"
+        )
 
     # MuJoCo name?
     mujoco_map = _MUJOCO_TO_CONFIG_29DOF if variant == "g1_29dof" else _MUJOCO_TO_CONFIG_23DOF
@@ -900,9 +948,10 @@ def _dict_to_dataclass(cls: type, data: Dict[str, Any]) -> Any:
 def _validate_config(cfg: Config) -> None:
     """Validate a loaded Config, raising ValueError on problems."""
     # Variant
-    if cfg.robot.variant not in ("g1_29dof", "g1_23dof"):
+    if cfg.robot.variant not in ("g1_29dof", "g1_23dof", "t4_29dof"):
         raise ValueError(
-            f"Invalid variant: {cfg.robot.variant!r}. Must be 'g1_29dof' or 'g1_23dof'."
+            f"Invalid variant: {cfg.robot.variant!r}. "
+            "Must be 'g1_29dof', 'g1_23dof', or 't4_29dof'."
         )
 
     # IDL mode

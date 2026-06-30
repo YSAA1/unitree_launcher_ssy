@@ -13,6 +13,7 @@ from unitree_launcher.config import (
     G1_29DOF_JOINTS,
     ISAACLAB_G1_29DOF_JOINTS,
     ISAACLAB_KP_29DOF,
+    T4_29DOF_JOINTS,
     load_config,
 )
 from unitree_launcher.policy.beyondmimic_policy import BeyondMimicPolicy
@@ -50,6 +51,21 @@ def _make_bm_onnx(path: str, obs_dim: int = 160, n_actions: int = 29):
         "body_names": "pelvis,torso_link,left_knee_link",
         "observation_names": "command,motion_anchor_pos_b,motion_anchor_ori_b,"
                              "base_lin_vel,base_ang_vel,joint_pos,joint_vel,actions",
+    }
+    create_beyondmimic_onnx(obs_dim, n_actions, n_actions, path, metadata=bm_metadata)
+
+
+def _make_t4_bm_onnx(path: str, obs_dim: int = 154, n_actions: int = 29):
+    bm_metadata = {
+        "joint_names": ",".join(T4_29DOF_JOINTS),
+        "joint_stiffness": ",".join(["40.0"] * n_actions),
+        "joint_damping": ",".join(["2.5"] * n_actions),
+        "action_scale": ",".join(["0.5"] * n_actions),
+        "default_joint_pos": ",".join(["0.0"] * n_actions),
+        "anchor_body_name": "Trunk",
+        "body_names": "Trunk,AL1,AL2",
+        "observation_names": "command,motion_anchor_ori_b,base_ang_vel,"
+                             "joint_pos,joint_vel,actions",
     }
     create_beyondmimic_onnx(obs_dim, n_actions, n_actions, path, metadata=bm_metadata)
 
@@ -93,6 +109,20 @@ class TestLoadPolicyBeyondMimic:
         policy, mapper = load_policy(onnx_path, config)
         assert isinstance(policy, BeyondMimicPolicy)
         assert mapper.n_policy == 29
+
+    def test_loads_t4_beyondmimic_onnx_with_t4_variant(self, tmp_path):
+        config = load_config(DEFAULT_CONFIG)
+        config.robot.variant = "t4_29dof"
+        onnx_path = str(tmp_path / "test_t4_bm.onnx")
+        _make_t4_bm_onnx(onnx_path)
+
+        policy, mapper = load_policy(onnx_path, config)
+
+        assert isinstance(policy, BeyondMimicPolicy)
+        assert mapper.robot_joints == T4_29DOF_JOINTS
+        assert mapper.policy_joints == T4_29DOF_JOINTS
+        np.testing.assert_array_equal(mapper.policy_indices, np.arange(29))
+        assert policy.observation_dim == 154
 
 
 # ============================================================================

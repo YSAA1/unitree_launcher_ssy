@@ -14,10 +14,9 @@ from typing import TYPE_CHECKING, Dict, Optional, Set, Tuple
 import numpy as np
 
 from unitree_launcher.config import (
-    G1_29DOF_JOINTS,
-    G1_23DOF_JOINTS,
     ISAACLAB_G1_29DOF_JOINTS,
     Config,
+    _get_joints_for_variant,
 )
 from unitree_launcher.policy.base import Policy, detect_policy_format
 from unitree_launcher.policy.beyondmimic_policy import BeyondMimicPolicy
@@ -46,8 +45,7 @@ def load_policy(
         (policy, joint_mapper) tuple.
     """
     if robot_joints is None:
-        variant = config.robot.variant
-        robot_joints = G1_29DOF_JOINTS if "29" in variant else G1_23DOF_JOINTS
+        robot_joints = _get_joints_for_variant(config.robot.variant)
 
     fmt = config.policy.format or detect_policy_format(onnx_path)
 
@@ -74,8 +72,7 @@ def load_default_policy(
         (policy, joint_mapper) tuple.
     """
     if robot_joints is None:
-        variant = config.robot.variant
-        robot_joints = G1_29DOF_JOINTS if "29" in variant else G1_23DOF_JOINTS
+        robot_joints = _get_joints_for_variant(config.robot.variant)
 
     default_path = config.policy.default_policy
     if default_path and Path(default_path).exists():
@@ -119,8 +116,7 @@ def preload_policy_dir(
         ``{path: (policy, mapper)}`` dict.
     """
     if robot_joints is None:
-        variant = config.robot.variant
-        robot_joints = G1_29DOF_JOINTS if "29" in variant else G1_23DOF_JOINTS
+        robot_joints = _get_joints_for_variant(config.robot.variant)
 
     exclude = exclude or set()
     result: Dict[str, Tuple[Policy, JointMapper]] = {}

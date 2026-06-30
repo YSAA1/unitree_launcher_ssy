@@ -25,6 +25,7 @@ from unitree_launcher.config import (
     ISAACLAB_KP_29DOF,
     Q_HOME_29DOF,
     Q_HOME_23DOF,
+    Q_HOME_T4_29DOF,
 )
 from unitree_launcher.policy.base import Policy
 from unitree_launcher.policy.joint_mapper import JointMapper
@@ -69,9 +70,12 @@ class BeyondMimicPolicy(Policy):
         # Home positions for full robot (for template filling)
         if config is not None:
             variant = config.robot.variant
-            q_home_dict = config.control.q_home or (
-                Q_HOME_29DOF if variant == "g1_29dof" else Q_HOME_23DOF
-            )
+            default_home = {
+                "g1_29dof": Q_HOME_29DOF,
+                "g1_23dof": Q_HOME_23DOF,
+                "t4_29dof": Q_HOME_T4_29DOF,
+            }[variant]
+            q_home_dict = config.control.q_home or default_home
             self._default_pos_robot = np.array(
                 [q_home_dict[j] for j in joint_mapper.robot_joints], dtype=np.float64
             )
