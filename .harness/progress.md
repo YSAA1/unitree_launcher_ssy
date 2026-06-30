@@ -30,6 +30,7 @@
 - Regenerated `docs/understanding/lesson-01-cli-to-runtime-assembly.md` with a source-evidenced CLI-to-Runtime data-flow walkthrough, Mermaid graph, glossary links, self-check questions, and copied `docs/understanding/assets/lesson-01-cli-runtime-intuition.png`.
 - Created `docs/understanding/lesson-02-realrobot-connect-to-sdk-dds.md` with the `robot.connect()` -> `RealRobot.connect()` -> `unitree_cpp.UnitreeController` -> Unitree SDK2/DDS chain, Mermaid graph, evidence map, self-check questions, and copied `docs/understanding/assets/lesson-02-realrobot-connect-intuition.png`.
 - Created `docs/understanding/lesson-03-runtime-step-control-tick.md` with the `Runtime.step()` control tick data flow, branch map, evidence map, self-check questions, and copied `docs/understanding/assets/lesson-03-runtime-step-intuition.png`.
+- Advanced the T4 low-level deployment PRD/issues/TDD flow: confirmed local PRD and issue breakdown, implemented the Issue 5 TDD slice for converting `RobotCommand` into a Zvalley `AllJointCmd_` without publishing, updated issue evidence, and verified `tests/test_t4_robot.py -q` plus `tests/test_main.py tests/test_config.py tests/test_factory.py tests/test_t4_robot.py -q`.
 
 ## 2026-06-30
 
@@ -46,4 +47,29 @@
 - Read local `zv_robot_sdk/` with a subagent. Key result: documented state topic is `rt/all_joint_state`, command topic is `rt/all_joint_cmd`, navigation/IMU-like topic is `rt/nav_all`, and SDK examples still show only 23 low-level command joints.
 - Updated `scripts/t4_probe_state.py` to support `--sdk-root zv_robot_sdk` and read-only `rt/nav_all` probing.
 - Ran `env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/test_t4_probe_state.py tests/test_config.py tests/test_factory.py tests/test_main.py -q`; result: PASS, `113 passed in 8.51s`.
+- Ran `python scripts/t4_probe_state.py --help`; result: PASS.
+- Continued TDD with Issue 3. Added `src/unitree_launcher/robot/t4_robot.py` as a command-disabled T4 backend boundary, routed `real` mode with `robot.variant: t4_29dof` to `T4Robot`, replaced `main.py`'s string-based `"29"` joint selection with `_get_joints_for_variant`, and extended `HoldPolicy` plus safety initialization for T4.
+- Ran `env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/test_main.py::TestMainIntegration::test_main_t4_real_mode_routes_to_t4_backend -q`; result: PASS, `1 passed in 1.11s`.
+- Ran `env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/test_main.py tests/test_config.py tests/test_factory.py tests/test_t4_probe_state.py -q`; result: PASS, `114 passed in 14.24s`.
+- Ran `env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/test_safety.py -q`; result: PASS, `43 passed in 0.06s`.
+- Continued TDD with Issue 4. Added `tests/test_t4_robot.py` and implemented read-only T4 SDK state conversion in `src/unitree_launcher/robot/t4_robot.py`: `connect()` initializes `rt/all_joint_state` and `rt/nav_all` subscribers, `get_state()` converts cached SDK messages into `RobotState`, and `send_command()` remains disabled.
+- Ran `env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/test_t4_robot.py -q`; result: PASS, `2 passed in 0.03s`.
+- Ran `env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/test_t4_robot.py tests/test_t4_probe_state.py tests/test_main.py tests/test_config.py tests/test_factory.py tests/test_safety.py -q`; result: PASS, `159 passed in 10.69s`.
+- Continued TDD with Issue 5. Added fake-SDK coverage for `RobotCommand` to Zvalley `AllJointCmd_` conversion, implemented `T4Robot.build_command_message()`, kept `send_command()` disabled, and added wrong-length command rejection.
+- Ran `env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/test_t4_robot.py -q`; result: PASS, `4 passed in 0.04s`.
+- Ran `env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/test_t4_robot.py tests/test_t4_probe_state.py tests/test_main.py tests/test_config.py tests/test_factory.py tests/test_safety.py -q`; result: PASS, `161 passed in 16.57s`.
+- Continued TDD with Issue 6. Added `real --t4-static-smoke --duration N` as an explicit T4 dry-run gate that builds one static hold command message without active policy loading, Runtime construction, or command publication.
+- Ran `env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/test_main.py::TestMainIntegration::test_main_t4_static_smoke_builds_hold_command_without_policy -q`; result: PASS, `1 passed in 0.09s`.
+- Ran `env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/test_main.py tests/test_t4_robot.py tests/test_t4_probe_state.py tests/test_config.py tests/test_factory.py tests/test_safety.py -q`; result: PASS, `164 passed in 10.30s`.
+- Continued TDD with Issue 7. Added `real --t4-policy-smoke --duration N --policy PATH` as an explicit T4 policy dry-run gate that loads the T4 ONNX, executes one policy step, builds a Zvalley command message, and exits without Runtime construction or command publication.
+- Ran `env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/test_main.py::TestMainIntegration::test_main_t4_policy_smoke_builds_policy_command_without_publishing -q`; result: PASS, `1 passed in 0.12s`.
+- Ran `env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/test_main.py tests/test_t4_robot.py tests/test_t4_probe_state.py tests/test_config.py tests/test_factory.py tests/test_safety.py -q`; result: PASS, `166 passed in 10.27s`.
+- Completed Issue 8 locally by adding `docs/runbooks/t4-deployment-gates.md`, linking it from README and RESOURCES, and marking the local runbook evidence in `docs/issues/t4-low-level-deployment-issues.md`.
+- Ran `gh auth status`; result: FAIL, active account `YSAA1` has an invalid keyring token. GitHub issue publication remains blocked until re-authentication.
+- Investigated the connected T4 over Ethernet. Host `enp4s0` can reach `192.168.12.100`; SSH login as `zl` works. Host-side Zvalley SDK probe can initialize subscriptions but receives no samples from `rt/all_joint_state` under the current robot/network configuration.
+- Confirmed the observed T4 onboard stack is ROS2 at `/home/zl/work/bipedal_humanoid_pro`, launched as `ros2 launch robot_system robot.launch.py`, with `/all_joint_state`, `/nav_all`, `/all_joint_cmd`, `/robot_state`, and `/change_robot_state`.
+- Added TDD slice for `scripts/t4_ros2_probe_state.py`: a read-only onboard ROS2 probe with fake-rclpy tests proving it subscribes to `/all_joint_state`, `/nav_all`, and `/robot_state`, waits for state topics, prints bounded first-sample diagnostics, validates bounded invocation, and creates no publisher.
+- Copied the ROS2 probe to the T4 at `/tmp/t4_ros2_probe_state.py` and ran `source /home/zl/work/bipedal_humanoid_pro/install/setup.bash && python3 /tmp/t4_ros2_probe_state.py --samples 1 --timeout 5`; result: PASS, `read_only: true`, `joint_count: 29`, nav/IMU fields printed, `robot_state: 2`, no command publisher.
+- Ran `env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/test_t4_ros2_probe_state.py tests/test_t4_probe_state.py tests/test_t4_robot.py tests/test_main.py tests/test_config.py tests/test_factory.py tests/test_safety.py -q`; result: PASS, `171 passed in 10.33s`.
+- Ran `python scripts/t4_ros2_probe_state.py --help`; result: PASS.
 - Ran `python scripts/t4_probe_state.py --help`; result: PASS.
