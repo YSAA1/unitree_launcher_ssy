@@ -547,9 +547,12 @@ def main(argv: Optional[list] = None) -> None:
     if args.mode in ("sim", "eval"):
         from unitree_launcher.robot.sim_robot import SimRobot
         robot = SimRobot(config)
-    elif args.mode == "real" and variant == "t4_29dof":
+    elif args.mode == "real" and config.robot.backend == "t4_sdk_dds":
         from unitree_launcher.robot.t4_robot import T4Robot
         robot = T4Robot(config)
+    elif args.mode == "real" and config.robot.backend == "t4_ros2":
+        from unitree_launcher.robot.t4_ros2_robot import T4Ros2Robot
+        robot = T4Ros2Robot(config)
     else:
         # real mode: onboard via C++ unitree_cpp
         from unitree_launcher.robot.real_robot import RealRobot
@@ -625,12 +628,16 @@ def main(argv: Optional[list] = None) -> None:
         try:
             state = robot.get_state()
             cmd = active_policy.step(state, np.zeros(3, dtype=np.float64))
-            # This verifies policy -> RobotCommand -> Zvalley message mapping.
+            # This verifies policy -> RobotCommand -> backend command-message mapping.
             # It intentionally does not publish the message.
             robot.build_command_message(cmd)
+            state_note = ""
+            if config.robot.backend == "t4_ros2":
+                state_note = f"; state_timestamp={state.timestamp:.6f}"
             print(
                 "[main] T4 policy smoke built one 29-DoF policy command "
-                f"for {args.duration:.3f}s; command publishing remains disabled."
+                f"for {args.duration:.3f}s{state_note}; "
+                "command publishing remains disabled."
             )
         finally:
             robot.disconnect()

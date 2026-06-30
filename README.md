@@ -130,27 +130,41 @@ This subscribes to `/all_joint_state`, `/nav_all`, and `/robot_state`, prints
 the joint count and state fields, and never creates an `/all_joint_cmd`
 publisher.
 
-`robot.variant: t4_29dof` is routed to a T4-specific backend in `real` mode.
-That backend currently supports read-only state subscription and `RobotState`
-conversion from `rt/all_joint_state` plus `rt/nav_all`. It can also build a
-29-DoF Zvalley `AllJointCmd_` message from a project `RobotCommand`, but
-command publishing is still disabled. Use the probe first; do not treat T4
-`real` mode as a policy-control path until the static-pose and operator opt-in
-gates are implemented.
+T4 configs must set both robot identity and communication backend:
+
+```yaml
+robot:
+  variant: t4_29dof
+  backend: t4_ros2     # or t4_sdk_dds for the Zvalley SDK path
+```
+
+`t4_sdk_dds` routes to `T4Robot`, which subscribes read-only to
+`rt/all_joint_state` and `rt/nav_all` when the Zvalley SDK environment is
+available. `t4_ros2` routes to `T4Ros2Robot`, which subscribes read-only to
+`/all_joint_state`, `/nav_all`, and `/robot_state` on the observed onboard ROS2
+stack. Both backends can build a 29-DoF command message from a project
+`RobotCommand`; both keep command publishing disabled. Do not treat T4 `real`
+mode as a motor-control path until a separate publish gate is implemented.
 
 The current static-pose smoke gate is a dry run: it builds one bounded 29-DoF
 hold command message and exits without publishing.
 
 ```bash
-uv run real --config path/to/t4_real.yaml --t4-static-smoke --duration 0.1 --no-log
+uv run real --config configs/t4_ros2_real.yaml --t4-static-smoke --duration 0.1 --no-log
 ```
 
-The current policy smoke gate is also a dry run: it loads the T4 ONNX, executes
-one policy step, builds one 29-DoF command message, and exits without
-publishing.
+The current policy smoke gate is also a dry run: it loads the T4 ONNX, reads
+one real state sample, executes one policy step, builds one 29-DoF command
+message, and exits without publishing.
 
 ```bash
-uv run real --config path/to/t4_real.yaml --policy assets/t4/policies/2026-06-10_12-11-59_t4_kick_modified_4096_7000_gpu0.onnx --t4-policy-smoke --duration 0.1 --no-log
+uv run real --config configs/t4_ros2_real.yaml --policy assets/t4/policies/2026-06-10_12-11-59_t4_kick_modified_4096_7000_gpu0.onnx --t4-policy-smoke --duration 0.1 --no-log
+```
+
+Latest T4 ROS2 full-project smoke evidence on the robot:
+
+```text
+[main] T4 policy smoke built one 29-DoF policy command for 0.100s; state_timestamp=5460731976.000000; command publishing remains disabled.
 ```
 
 The T4 porting PRD and implementation slices are tracked in:
@@ -158,6 +172,7 @@ The T4 porting PRD and implementation slices are tracked in:
 - `docs/prd/t4-low-level-deployment.md`
 - `docs/issues/t4-low-level-deployment-issues.md`
 - `docs/plans/2026-06-30--t4-porting-grill.md`
+- `docs/plans/2026-06-30--t4-ros2-policy-smoke-plan.md`
 - `docs/runbooks/t4-deployment-gates.md`
 
 Current local T4 assets are organized under:
@@ -223,6 +238,7 @@ YAML configs in `configs/`. Each mode auto-selects its config — no `-c` needed
 |--------|------------------|-------------|
 | `sim.yaml` | `sim`, `eval`, `mirror` | Simulation defaults (500 Hz physics, domain ID 1) |
 | `real.yaml` | `real` | Onboard deployment (eth0, domain ID 0, tilt/frame-drop checks) |
+| `t4_ros2_real.yaml` | explicit `--config` | T4 onboard ROS2 read-only policy smoke config |
 | `unsafe.yaml` | `--preset unsafe` | Disables tilt check and joint position limits |
 
 Key settings:

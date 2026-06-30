@@ -73,11 +73,12 @@ def _make_t4_beyondmimic_onnx(path: str, obs_dim: int = 154, action_dim: int = 2
     create_beyondmimic_onnx(obs_dim, action_dim, action_dim, path, metadata=metadata)
 
 
-def _write_t4_real_config(path: Path) -> None:
+def _write_t4_real_config(path: Path, backend: str = "t4_sdk_dds") -> None:
     path.write_text(
-        """
+        f"""
 robot:
   variant: t4_29dof
+  backend: {backend}
   idl_mode: 0
 
 policy:
@@ -376,7 +377,7 @@ class TestMainIntegration:
             assert call_config.network.interface == "eth0"
 
     def test_main_t4_real_mode_routes_to_t4_backend(self, tmp_path):
-        """T4 real mode creates T4Robot and wires T4 joints into Runtime."""
+        """T4 SDK real mode creates T4Robot and wires T4 joints into Runtime."""
         import unitree_launcher.robot.t4_robot as t4_mod
         from unitree_launcher.robot.base import RobotState
 
@@ -402,9 +403,42 @@ class TestMainIntegration:
             MockT4.assert_called_once()
             call_config = MockT4.call_args[0][0]
             assert call_config.robot.variant == "t4_29dof"
+            assert call_config.robot.backend == "t4_sdk_dds"
             assert call_config.network.domain_id == 0
             _, runtime_kwargs = MockRuntime.call_args
             assert runtime_kwargs["joint_mapper"].robot_joints == T4_29DOF_JOINTS
+
+    def test_main_t4_ros2_policy_smoke_uses_ros2_backend_without_publishing(self, tmp_path):
+        """T4 ROS2 policy smoke routes to T4Ros2Robot and never publishes."""
+        import unitree_launcher.robot.t4_ros2_robot as t4_ros2_mod
+        from unitree_launcher.robot.base import RobotState
+
+        onnx_path = str(tmp_path / "test_t4_policy.onnx")
+        config_path = tmp_path / "t4_ros2_real.yaml"
+        _make_t4_beyondmimic_onnx(onnx_path)
+        _write_t4_real_config(config_path, backend="t4_ros2")
+
+        mock_robot = MagicMock(spec=t4_ros2_mod.T4Ros2Robot)
+        mock_robot.n_dof = 29
+        mock_robot.get_state.return_value = RobotState.zeros(29)
+
+        with patch.object(t4_ros2_mod, "T4Ros2Robot", return_value=mock_robot) as MockT4Ros2, \
+             patch("unitree_launcher.main.Runtime") as MockRuntime:
+            main([
+                "real", "--policy", onnx_path, "--config", str(config_path),
+                "--no-log", "--t4-policy-smoke", "--duration", "0.1",
+            ])
+
+            MockT4Ros2.assert_called_once()
+            call_config = MockT4Ros2.call_args[0][0]
+            assert call_config.robot.variant == "t4_29dof"
+            assert call_config.robot.backend == "t4_ros2"
+            mock_robot.connect.assert_called_once()
+            mock_robot.get_state.assert_called_once()
+            mock_robot.build_command_message.assert_called_once()
+            mock_robot.send_command.assert_not_called()
+            mock_robot.disconnect.assert_called_once()
+            MockRuntime.assert_not_called()
 
     def test_main_t4_static_smoke_builds_hold_command_without_policy(self, tmp_path):
         """T4 static smoke is explicit, bounded, and does not load active policy."""

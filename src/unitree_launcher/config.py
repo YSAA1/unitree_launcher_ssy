@@ -853,6 +853,7 @@ def resolve_joint_name(name: str, variant: str = "g1_29dof") -> str:
 @dataclass
 class RobotConfig:
     variant: str = "g1_29dof"
+    backend: Optional[str] = None
     idl_mode: int = 0
 
 
@@ -961,6 +962,32 @@ def _validate_config(cfg: Config) -> None:
         )
 
     variant = cfg.robot.variant
+    backend = cfg.robot.backend
+    valid_backends = ("g1_unitree_cpp", "t4_sdk_dds", "t4_ros2")
+    if backend is None:
+        if variant.startswith("g1_"):
+            cfg.robot.backend = "g1_unitree_cpp"
+        else:
+            raise ValueError(
+                "robot.backend is required for variant "
+                f"{variant!r}. Must be 't4_sdk_dds' or 't4_ros2'."
+            )
+    elif backend not in valid_backends:
+        raise ValueError(
+            f"Invalid robot.backend: {backend!r}. "
+            "Must be 'g1_unitree_cpp', 't4_sdk_dds', or 't4_ros2'."
+        )
+    elif variant.startswith("g1_") and backend != "g1_unitree_cpp":
+        raise ValueError(
+            f"Invalid robot.backend {backend!r} for variant {variant!r}. "
+            "G1 variants must use 'g1_unitree_cpp'."
+        )
+    elif variant == "t4_29dof" and backend not in ("t4_sdk_dds", "t4_ros2"):
+        raise ValueError(
+            f"Invalid robot.backend {backend!r} for variant {variant!r}. "
+            "T4 must use 't4_sdk_dds' or 't4_ros2'."
+        )
+
     joints = _get_joints_for_variant(variant)
 
     # Resolve and validate joint name lists

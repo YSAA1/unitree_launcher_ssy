@@ -262,6 +262,14 @@ class TestConfigLoading:
         # Override values applied
         assert merged.network.domain_id == 0
 
+    def test_load_t4_ros2_real_config(self):
+        cfg = load_config(str(PROJECT_ROOT / "configs" / "t4_ros2_real.yaml"))
+        assert cfg.robot.variant == "t4_29dof"
+        assert cfg.robot.backend == "t4_ros2"
+        assert cfg.policy.format == "beyondmimic"
+        assert cfg.policy.use_estimator is False
+        assert cfg.logging.enabled is False
+
     def test_merge_real_into_sim(self):
         base = load_config(str(PROJECT_ROOT / "configs" / "sim.yaml"))
         override = load_config(str(PROJECT_ROOT / "configs" / "real.yaml"))
@@ -285,9 +293,30 @@ class TestConfigValidation:
             load_config(path)
 
     def test_t4_variant_accepted(self):
-        path = self._write_yaml({"robot": {"variant": "t4_29dof"}})
+        path = self._write_yaml({"robot": {"variant": "t4_29dof", "backend": "t4_sdk_dds"}})
         cfg = load_config(path)
         assert cfg.robot.variant == "t4_29dof"
+        assert cfg.robot.backend == "t4_sdk_dds"
+
+    def test_g1_config_without_backend_defaults_to_unitree_cpp(self):
+        path = self._write_yaml({"robot": {"variant": "g1_29dof"}})
+        cfg = load_config(path)
+        assert cfg.robot.backend == "g1_unitree_cpp"
+
+    def test_t4_config_requires_explicit_backend(self):
+        path = self._write_yaml({"robot": {"variant": "t4_29dof"}})
+        with pytest.raises(ValueError, match="backend"):
+            load_config(path)
+
+    def test_t4_ros2_backend_accepted(self):
+        path = self._write_yaml({"robot": {"variant": "t4_29dof", "backend": "t4_ros2"}})
+        cfg = load_config(path)
+        assert cfg.robot.backend == "t4_ros2"
+
+    def test_unknown_backend_rejected(self):
+        path = self._write_yaml({"robot": {"variant": "g1_29dof", "backend": "unknown"}})
+        with pytest.raises(ValueError, match="backend"):
+            load_config(path)
 
     def test_invalid_joint_name_rejected(self):
         path = self._write_yaml({

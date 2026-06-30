@@ -24,22 +24,34 @@
   Operator runbook for staged T4 deployment gates from read-only probe through dry-run policy smoke and future publish prerequisites.
 - [docs/plans/2026-06-30--t4-porting-grill.md](docs/plans/2026-06-30--t4-porting-grill.md)
   Decision record and evidence from the T4 low-level porting grill session.
+- [docs/plans/2026-06-30--t4-ros2-policy-smoke-plan.md](docs/plans/2026-06-30--t4-ros2-policy-smoke-plan.md)
+  Executable plan and completion evidence for the T4 ROS2 full-project policy smoke dry-run slice.
 - [docs/adr/0001-t4-low-level-policy-control.md](docs/adr/0001-t4-low-level-policy-control.md)
   ADR choosing low-level T4 policy control instead of vendor high-level action switching.
 - [docs/adr/0002-add-t4-as-robot-variant.md](docs/adr/0002-add-t4-as-robot-variant.md)
   ADR choosing `t4_29dof` as the first T4 representation in the existing robot variant model.
+- [docs/adr/0003-use-onboard-ros2-adapter-for-t4.md](docs/adr/0003-use-onboard-ros2-adapter-for-t4.md)
+  ADR choosing the observed onboard ROS2 adapter as the next T4 deployment path.
+- [docs/adr/0004-split-robot-variant-from-backend.md](docs/adr/0004-split-robot-variant-from-backend.md)
+  ADR separating robot model identity from communication backend selection.
 - [scripts/t4_probe_state.py](scripts/t4_probe_state.py)
   Read-only T4 SDK probe. Use on the T4 control environment to inspect `rt/all_joint_state` without publishing commands.
 - [scripts/t4_ros2_probe_state.py](scripts/t4_ros2_probe_state.py)
   Read-only T4 onboard ROS2 probe. Use after sourcing the T4 ROS2 workspace to inspect `/all_joint_state`, `/nav_all`, and `/robot_state` without publishing commands.
 - [src/unitree_launcher/robot/t4_robot.py](src/unitree_launcher/robot/t4_robot.py)
   T4 real-mode backend boundary. It subscribes read-only to Zvalley joint/nav state, builds SDK command messages, and remains publish-disabled until static-pose gates are implemented.
+- [src/unitree_launcher/robot/t4_ros2_robot.py](src/unitree_launcher/robot/t4_ros2_robot.py)
+  T4 onboard ROS2 backend. It subscribes read-only to `/all_joint_state`, `/nav_all`, and `/robot_state`, waits for a real joint-state sample, builds ROS2 `AllJointCmd`, and remains publish-disabled.
+- [configs/t4_ros2_real.yaml](configs/t4_ros2_real.yaml)
+  T4 onboard ROS2 read-only policy smoke config using `robot.variant: t4_29dof` and `robot.backend: t4_ros2`.
 - [tests/test_t4_probe_state.py](tests/test_t4_probe_state.py)
   Fake-SDK tests for the read-only T4 probe behavior.
 - [tests/test_t4_ros2_probe_state.py](tests/test_t4_ros2_probe_state.py)
   Fake-rclpy tests for the read-only T4 onboard ROS2 probe behavior.
 - [tests/test_t4_robot.py](tests/test_t4_robot.py)
   Fake-SDK tests for T4 backend state conversion, command-message conversion, and command-disabled behavior.
+- [tests/test_t4_ros2_robot.py](tests/test_t4_ros2_robot.py)
+  Fake-rclpy tests for T4 ROS2 backend state conversion, first-state waiting, command-message conversion, and command-disabled behavior.
 - [tests/test_main.py](tests/test_main.py)
   Includes T4 real-mode routing, `--t4-static-smoke`, and `--t4-policy-smoke` dry-run wiring coverage.
 - [assets/t4/policies/](assets/t4/policies/)

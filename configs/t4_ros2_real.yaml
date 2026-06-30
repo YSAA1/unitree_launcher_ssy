@@ -1,0 +1,39 @@
+# T4 onboard ROS2 read-only policy smoke config.
+#
+# This backend subscribes to the robot's existing ROS2 topics and can build
+# AllJointCmd messages, but command publishing is intentionally disabled.
+robot:
+  variant: t4_29dof
+  backend: t4_ros2
+  idl_mode: 0
+
+policy:
+  format: beyondmimic
+  default_policy: "assets/t4/policies/2026-06-10_12-11-59_t4_kick_modified_4096_7000_gpu0.onnx"
+  use_onnx_metadata: true
+  use_estimator: false
+
+control:
+  policy_frequency: 50
+  sim_frequency: 1000
+  kd_damp: 8.0
+
+safety:
+  joint_position_limits: false
+  joint_velocity_limits: false
+  torque_limits: false
+  tilt_check: true
+  frame_drop_check: true
+
+network:
+  interface: "eth0"
+  domain_id: 0
+
+viewer:
+  enabled: false
+  sync: false
+
+logging:
+  enabled: false
+  format: npz
+  compression: none

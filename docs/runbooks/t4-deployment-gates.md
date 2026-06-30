@@ -2,13 +2,12 @@
 
 This runbook is the operator sequence for the staged T4 low-level deployment.
 It assumes the project is extending the existing `real` deployment path to
-`robot.variant: t4_29dof` through the local Zvalley SDK checkout in
-`zv_robot_sdk/`.
+`robot.variant: t4_29dof` with an explicit `robot.backend` selection.
 
 The current implementation is intentionally dry-run only for command paths:
-it can subscribe to state, convert state, build SDK command messages, and run
-one policy step into a command message. It must not be treated as real motor
-control until the publish gate is explicitly implemented and verified.
+it can subscribe to state, convert state, build SDK or ROS2 command messages,
+and run one policy step into a command message. It must not be treated as real
+motor control until the publish gate is explicitly implemented and verified.
 
 ## Source Artifacts
 
@@ -17,8 +16,10 @@ control until the publish gate is explicitly implemented and verified.
 - ADR: `docs/adr/0001-t4-low-level-policy-control.md`
 - ADR: `docs/adr/0002-add-t4-as-robot-variant.md`
 - Probe script: `scripts/t4_probe_state.py`
-- T4 backend: `src/unitree_launcher/robot/t4_robot.py`
-- T4 tests: `tests/test_t4_robot.py`, `tests/test_main.py`
+- ROS2 probe script: `scripts/t4_ros2_probe_state.py`
+- SDK backend: `src/unitree_launcher/robot/t4_robot.py`
+- ROS2 backend: `src/unitree_launcher/robot/t4_ros2_robot.py`
+- T4 tests: `tests/test_t4_robot.py`, `tests/test_t4_ros2_robot.py`, `tests/test_main.py`
 
 ## Gate 0: Asset and Config Readiness
 
@@ -32,6 +33,8 @@ Required state:
 - T4 XML/URDF evidence is under `assets/robots/t4/`.
 - Zvalley SDK checkout exists at `zv_robot_sdk/`.
 - T4 config uses `robot.variant: t4_29dof`.
+- T4 config explicitly selects `robot.backend: t4_sdk_dds` or
+  `robot.backend: t4_ros2`.
 
 Pass evidence:
 
@@ -205,7 +208,7 @@ output is involved.
 Run:
 
 ```bash
-uv run real --config path/to/t4_real.yaml --t4-static-smoke --duration 0.1 --no-log
+uv run real --config configs/t4_ros2_real.yaml --t4-static-smoke --duration 0.1 --no-log
 ```
 
 Current behavior:
@@ -233,23 +236,25 @@ Do not continue if:
 ## Gate 5: Policy Smoke Dry Run
 
 Purpose: validate ONNX policy output to T4 command-message conversion before
-any SDK command publication is enabled.
+any command publication is enabled.
 
 Run:
 
 ```bash
-uv run real --config path/to/t4_real.yaml --policy assets/t4/policies/2026-06-10_12-11-59_t4_kick_modified_4096_7000_gpu0.onnx --t4-policy-smoke --duration 0.1 --no-log
+uv run real --config configs/t4_ros2_real.yaml --policy assets/t4/policies/2026-06-10_12-11-59_t4_kick_modified_4096_7000_gpu0.onnx --t4-policy-smoke --duration 0.1 --no-log
 ```
 
 Current behavior:
 
 - requires `robot.variant: t4_29dof`
+- requires explicit T4 backend selection
 - requires a positive `--duration`
 - requires `--policy`
 - loads the T4 ONNX through the existing policy loader
-- reads one `RobotState`
+- reads one `RobotState`; the ROS2 backend waits for a real `/all_joint_state`
+  sample before returning
 - executes one policy step with zero velocity command
-- builds one 29-DoF Zvalley command message
+- builds one 29-DoF backend command message
 - does not construct Runtime
 - does not call `send_command()`
 - exits and disconnects
@@ -258,8 +263,15 @@ Pass evidence:
 
 - T4 policy loads successfully
 - policy output maps to a 29-DoF command message
+- ROS2 smoke output includes `state_timestamp=...`
 - no Runtime control loop starts
 - no command publication occurs
+
+Current observed T4 ROS2 full-project evidence:
+
+```text
+[main] T4 policy smoke built one 29-DoF policy command for 0.100s; state_timestamp=5460731976.000000; command publishing remains disabled.
+```
 
 Do not continue if:
 
@@ -291,7 +303,7 @@ mean dry-run only.
 Run this before declaring the local T4 porting slice ready:
 
 ```bash
-env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/test_t4_ros2_probe_state.py tests/test_t4_probe_state.py tests/test_t4_robot.py tests/test_main.py tests/test_config.py tests/test_factory.py tests/test_safety.py -q
+env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/test_t4_ros2_probe_state.py tests/test_t4_probe_state.py tests/test_t4_ros2_robot.py tests/test_t4_robot.py tests/test_main.py tests/test_config.py tests/test_factory.py tests/test_safety.py -q
 python scripts/t4_ros2_probe_state.py --help
 python scripts/t4_probe_state.py --help
 ```
